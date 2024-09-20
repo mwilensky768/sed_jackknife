@@ -279,7 +279,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--field", type=str, required=False, default="0")
     parser.add_argument("--outdir", required=True, help="Where the outputs should be stored")
-    parser.add_argument("--filedir", required=True, help="Directory where the SED data live")
+    parser.add_argument("--filedir", required=False, default="./data",
+                        help="Directory where the SED data live")
     parser.add_argument("--nlive-fac", dest="nlive_fac", type=int, default=2, required=False)
     parser.add_argument("--num-repeats-fac", dest="num_repeats_fac", type=int, default=1, required=False)
     parser.add_argument("--ref_freq", required=False, default=73, type=float)
