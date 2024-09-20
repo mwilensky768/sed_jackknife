@@ -5,4 +5,4 @@ The code to run the polychord sampler is in polychord_hyper.py
 
 This will output some chains that can be post-processed with anesthetic to produce the plots etc. in the associated paper.
 
-Processed data for performing the jackknives will be uploaded pending approval from the MeerKAT collaboration.
+Processed data for performing the jackknives are in the `data` directory with an accompanying readme explaining their contents.
