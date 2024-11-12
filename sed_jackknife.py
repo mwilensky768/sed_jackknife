@@ -359,16 +359,10 @@ if __name__ == "__main__":
     init_guesses = {"0": (-0.52, S0_cent, -0.13, 1, 1, 1, 1), 
                     "1": (-0.46, S0_cent, -0.14, 1, 1, 1, 1), 
                     "2": (-0.54, S0_cent, -0.08, 1, 1, 1, 1)}
-    
-
-    if args.offset:
-        offset = get_offset(init_guesses[args.field], freqs, data, noise, gain_cov, alpha_bounds, S0_bounds,
-                            c_bounds, gm_bounds, ref_freq=args.ref_freq, low_dim=args.low_dim)
-    else:
-        offset = 0
         
     
-    settings = pypolychord.PolyChordSettings(nDims, nDerived, base_dir=f"{args.outdir}/chains", 
+    settings = pypolychord.PolyChordSettings(nDims, nDerived, 
+                                             base_dir=f"{args.outdir}/chains", 
                                              file_root=file_root,
                                              nlive=args.nlive_fac * nDims * 25,
                                              num_repeats=args.num_repeats_fac * nDims * 5)
