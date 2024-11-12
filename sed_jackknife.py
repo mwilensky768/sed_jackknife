@@ -276,29 +276,6 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, gain_h
         gain_ret = ()
 
     return plaw_ret + gain_ret
-
-def get_offset(init_guess, freqs, data, noise, gain_cov, alpha_bounds, S0_bounds, c_bounds, 
-               gain_bounds, ref_freq=73, low_dim=False):
-    """
-    Does not work with jk_mode=high
-    """
-
-    def neg_logL(params):
-        logL, _ = loglike(params, freqs, data, noise, gain_cov, ref_freq=ref_freq, offset=0, low_dim=low_dim)
-        return -logL
-    
-    bounds = (alpha_bounds, S0_bounds, c_bounds, gain_bounds, gain_bounds, gain_bounds, gain_bounds)
-    
-    if low_dim:
-        init_guess = init_guess[:3]
-        bounds = bounds[:3]
-    
-    mini = minimize(neg_logL, init_guess, bounds=bounds)
-    loc = mini["x"]
-    val = -neg_logL(loc)
-    print(f"Found offset {val} at location {loc}")
-    
-    return val
                                       
     
 if __name__ == "__main__":
@@ -379,8 +356,9 @@ if __name__ == "__main__":
                        low_dim=args.low_dim, curv=args.curv, slices=slices)
     
     def priorwrap(cube_coords):
-        return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, gain_hyperstd, 
-                     low_dim=args.low_dim, flat=args.flat, curv=args.curv)
+        return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
+                     gain_hypermean, gain_hyperstd, low_dim=args.low_dim, 
+                     flat=args.flat, curv=args.curv)
 
 
     pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
