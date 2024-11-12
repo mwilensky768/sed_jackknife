@@ -374,7 +374,7 @@ if __name__ == "__main__":
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
-                     gain_hypermean, gain_hyperstd, low_dim=args.low_dim, 
+                     gain_hypermean, gain_hyperstd, Nfields, low_dim=args.low_dim, 
                      flat=args.flat, curv=args.curv)
 
 
