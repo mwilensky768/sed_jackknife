@@ -375,7 +375,7 @@ if __name__ == "__main__":
 
     def loglikewrap(params):
 
-        return loglike(params, freqs, data, noise, gain_cov, ref_freq=args.ref_freq, offset=offset, 
+        return loglike(params, freqs, data, noise, gain_cov, ref_freq=args.ref_freq, 
                        low_dim=args.low_dim, curv=args.curv, slices=slices)
     
     def priorwrap(cube_coords):
