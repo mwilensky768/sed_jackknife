@@ -257,8 +257,8 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, low_dim=False,
     
     return logL, (chisq, logdetcov)
 
-def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, gain_hyperstd, low_dim=False,
-          flat=False, curv=False):
+def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, 
+          gain_hyperstd, low_dim=False, curv=False):
     alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[0])
     S0_prior = UniformPrior(*S0_bounds)(cube_coords[1])
     if curv:
