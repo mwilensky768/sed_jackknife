@@ -5,7 +5,21 @@ from scipy.optimize import minimize
 import argparse
 
 def slice_setup(jk_mode=None):
-    if jk_mode is None:
+    """
+    Get slices down the frequency axis of the input data based on which 
+    jackknife is being performed.
+
+    Parameters:
+        jk_mode (str):
+            Choice of jackknife. Must be one of None, 'joint', 'low', 'high', 
+            'sim'.
+
+    Returns:
+        slices (tuple):
+            Sequence of slices where each slice corresponds to a particular
+            experiment.
+    """
+    if (jk_mode is None) or (jk_mode == "joint"):
         slices = (slice(0,1), slice(1, 2), slice(2, 60), slice(60, 150))
     elif jk_mode == "low":
         slices = (slice(0,1), slice(1, 2), slice(2, 60))
