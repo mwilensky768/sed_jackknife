@@ -258,22 +258,26 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, low_dim=False,
     return logL, (chisq, logdetcov)
 
 def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, 
-          gain_hyperstd, low_dim=False, curv=False):
-    alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[0])
-    S0_prior = UniformPrior(*S0_bounds)(cube_coords[1])
-    if curv:
-        c_prior = UniformPrior(*c_bounds)(cube_coords[2])
-        plaw_ret = (alpha_prior, S0_prior, c_prior)
-    else:
-        plaw_ret = (alpha_prior, S0_prior)
+          gain_hyperstd, Nfields, low_dim=False, curv=False):
+    
+    nplaw_params = 2 + int(curv)
+    plaw_ret = []
+    for field_ind in range(Nfields):
+        alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
+        S0_prior = UniformPrior(*S0_bounds)(cube_coords[field_ind * nplaw_params + 1])
+        if curv:
+            c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
+            plaw_ret += [alpha_prior, S0_prior, c_prior]
+        else:
+            plaw_ret += [alpha_prior, S0_prior]
     
     # Same priors for now
     if not low_dim:
         num_gain = len(gain_hyperstd)
         gain_ret = GaussianPrior(np.full(num_gain, gain_hypermean), gain_hyperstd)(cube_coords[-num_gain:])
-        gain_ret = tuple(gain_ret)
+        gain_ret = list(gain_ret)
     else:
-        gain_ret = ()
+        gain_ret = []
 
     return plaw_ret + gain_ret
                                       
