@@ -327,7 +327,8 @@ if __name__ == "__main__":
     c_bounds = (-0.3, 0)
     gm_bounds = (0, 3) # Just used for optimization
     
-    nDims = (2 + int(args.curv)) * Nfields
+    nplaw_params = 2 + int(args.curv)
+    nDims = nplaw_params * Nfields
     if not args.low_dim:
         nDims += num_gains
     nDerived = 2
@@ -351,9 +352,21 @@ if __name__ == "__main__":
     
 
     def loglikewrap(params):
-
-        return loglike(params, freqs, data, noise, gain_cov, ref_freq=args.ref_freq, 
-                       low_dim=args.low_dim, curv=args.curv, slices=slices)
+        loglike = 0
+        for field_ind in range(Nfields): # Assume noise and gain scatter are independent errors across fields
+            plaw_params = params[field_ind * nplaw_params: (field_ind + 1) * nplaw_params]
+            field_params = plaw_params + params[-num_gains:]
+            loglike += loglike(
+                field_params, 
+                freqs, 
+                data, 
+                noise, 
+                gain_cov, 
+                ref_freq=args.ref_freq, 
+                low_dim=args.low_dim, 
+                curv=args.curv, 
+                slices=slices
+            )
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
