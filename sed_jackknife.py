@@ -197,8 +197,8 @@ def get_model(alpha_0, S0, c, freqs, ref_freq=73):
     
     return model
 
-def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, offset=0, low_dim=False, curv=False,
-            slices=slice_setup()):
+def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, low_dim=False, 
+            curv=False, slices=slice_setup()):
     """
     Get the log-likelihood of the parameters.
 
@@ -217,9 +217,6 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, offset=0, low_dim
             gain variances.
         ref_freq (float):
             Reference frequency, in MHz.
-        offset (float):
-            Arbitrary amount to subtract from this log-likelihood. 
-            Was useful for debugging in early development.
         low_dim (bool):
             Whether Polychord is sampling for a low-dimensional (pre-marginalized)
             run.
@@ -256,7 +253,7 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, offset=0, low_dim
     chisq = np.sum(res * cinv_res)
     logdetcov = np.linalg.slogdet(cov)[1] + len(freqs) * np.log(2 * np.pi)
     
-    logL = - 0.5 * (chisq + logdetcov) - offset
+    logL = - 0.5 * (chisq + logdetcov)
     
     return logL, (chisq, logdetcov)
 
