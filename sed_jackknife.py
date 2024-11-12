@@ -32,7 +32,7 @@ def slice_setup(jk_mode=None):
     return slices
         
 
-def read_dat(filedir, fields, jk_mode=None):
+def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
     """
     Reads data and metadata from an npy file according to which axis is which:
     1 - frequencies
@@ -43,10 +43,11 @@ def read_dat(filedir, fields, jk_mode=None):
     Parameters:
         filedir (str): 
             Path to directory containing the files.
-        field (int or seq):
+        fields (int or seq):
             Which fields to process. Fields with designation greater than 2
             are simulation fields. jk_mode must be 'joint' to analyze multiple
-            fields simultaneously. Otherwise supply a single integer.
+            fields simultaneously. Otherwise supply a single integer. Must not
+            jointly analyze fields with different numbers of frequencies.
         jk_mode (None or str):
             Which jackknife is being run. If joint, gets the information for
             all fields specified.
@@ -64,36 +65,31 @@ def read_dat(filedir, fields, jk_mode=None):
             The 0th entry in the flux density array, specifically used
             for centering a prior.
     """
-    if jk_mode == "joint":
-        Nfreqs = 150
-        Nfields = len(fields)
-        data_shape = [Nfields, Nfreqs]
-        gain_cov_shape = [Nfields, Nfreqs, Nfreqs]
-        
-        data = np.zeros(data_shape)
-        noise = np.zeros(data_shape)
-        gain_cov = np.zeros(gain_cov_shape)
-        S0_cent = np.zeros(Nfields)
 
-        for field in range(Nfields):
-            data[field], noise[field], gain_cov[field], freqs, S0_cent[field] = read_dat(
-                filedir, 
-                field, 
-                jk_mode=None
-            )
-    else:
-        datarr = np.load(f"{filedir}/apdata_source{fields}.npy")
+    Nfreqs = sum([slice.stop - slice.start for slice in slices])
+    Nfields = len(fields)
+    data_shape = [Nfields, Nfreqs]
+    gain_cov_shape = [Nfields, Nfreqs, Nfreqs]
+        
+    data = np.zeros(data_shape)
+    noise = np.zeros(data_shape)
+    gain_cov = np.zeros(gain_cov_shape)
+    S0_cent = np.zeros(Nfields)
+
+    for field_ind, field in enumerate(fields):
+        datarr = np.load(f"{filedir}/apdata_source{field}.npy")
         if jk_mode == "low":
             slc = slice(0, 60)
         elif jk_mode == "high":
             slc = list(range(2)) + list(range(60, 150))
         else:
             slc = slice(None)
-        data = datarr[2, slc]
-        noise = datarr[3, slc]**2
-        gain_cov = np.diag(datarr[4, slc]**2)
+        data[field_ind] = datarr[2, slc]
+        noise[field_ind] = datarr[3, slc]**2
+        gain_cov[field_ind] = np.diag(datarr[4, slc]**2)
         freqs = datarr[1, slc]
-        S0_cent = datarr[2, 0]
+        S0_cent[field_ind] = datarr[2, 0]
+
     
     return data, noise, gain_cov, freqs, S0_cent
 
@@ -311,7 +307,8 @@ def get_offset(init_guess, freqs, data, noise, gain_cov, alpha_bounds, S0_bounds
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--field", type=str, required=False, default="0")
+    parser.add_argument("--fields", type=int, required=False, default="0",
+                        nargs="*")
     parser.add_argument("--outdir", required=True, help="Where the outputs should be stored")
     parser.add_argument("--filedir", required=False, default="./data",
                         help="Directory where the SED data live")
@@ -338,7 +335,9 @@ if __name__ == "__main__":
 
     slices = slice_setup(args.jk_mode)
     
-    data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.field, args.jk_mode)
+
+    data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
+                                                     args.jk_mode, slices=slices)
     if args.low_dim:
         gain_cov = gain_cov_process(gain_cov, args.bitstr, args.gain_std, slices=slices)
     
