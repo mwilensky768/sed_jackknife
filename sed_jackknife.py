@@ -344,7 +344,7 @@ if __name__ == "__main__":
                                              nlive=args.nlive_fac * nDims * 25,
                                              num_repeats=args.num_repeats_fac * nDims * 5)
     
-    
+
     """
     End constants
     """
@@ -361,4 +361,22 @@ if __name__ == "__main__":
                      flat=args.flat, curv=args.curv)
 
 
-    pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
+    output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
+
+    param_names = []
+    for field in args.fields:
+        model_params_field = [
+            r"$\alpha_%s(\nu_0)$" % field,
+            r"$S_%s(\nu_0)$" % field,
+        ]
+        if args.curv:
+            model_params_field.append(r"$c_%s$" % field)
+        param_names.extend(model_params_field)
+    
+    exp_names = ["LWA, Has", "MK1", "MK2"]
+    if args.jk_mode == "high":
+        exp_names.pop(2)
+    for gain_ind in range(num_gains):
+        param_names.append(r"$\varepsilon_%s$" % exp_names[gain_ind])
+
+    output.make_paramnames_files(param_names)
