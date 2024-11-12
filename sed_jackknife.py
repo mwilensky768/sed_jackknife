@@ -11,7 +11,7 @@ def slice_setup(jk_mode=None):
 
     Parameters:
         jk_mode (str):
-            Choice of jackknife. Must be one of None, 'joint', 'low', 'high', 
+            Choice of jackknife. Must be one of None, 'low', 'high', 
             'sim'.
 
     Returns:
@@ -19,7 +19,7 @@ def slice_setup(jk_mode=None):
             Sequence of slices where each slice corresponds to a particular
             experiment.
     """
-    if (jk_mode is None) or (jk_mode == "joint"):
+    if jk_mode is None:
         slices = (slice(0,1), slice(1, 2), slice(2, 60), slice(60, 150))
     elif jk_mode == "low":
         slices = (slice(0,1), slice(1, 2), slice(2, 60))
@@ -45,12 +45,10 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
             Path to directory containing the files.
         fields (int or seq):
             Which fields to process. Fields with designation greater than 2
-            are simulation fields. jk_mode must be 'joint' to analyze multiple
-            fields simultaneously. Otherwise supply a single integer. Must not
-            jointly analyze fields with different numbers of frequencies.
+            are simulation fields. Must not jointly analyze fields with 
+            different frequencies.
         jk_mode (None or str):
-            Which jackknife is being run. If joint, gets the information for
-            all fields specified.
+            Which jackknife is being run. 
 
     Returns:
         data (array):
@@ -285,7 +283,7 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
 if __name__ == "__main__":
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--fields", type=int, required=False, default="0",
+    parser.add_argument("--fields", type=int, required=False, default=0,
                         nargs="*")
     parser.add_argument("--outdir", required=True, help="Where the outputs should be stored")
     parser.add_argument("--filedir", required=False, default="./data",
@@ -309,10 +307,13 @@ if __name__ == "__main__":
     Constants
     """
     filedir = args.filedir
-    file_root = f"MEERKLASS_field{args.field}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_hyper"
 
     slices = slice_setup(args.jk_mode)
     Nfields = len(args.fields)
+
+    fields_as_str = [str(field) for field in args.fields]
+    fieldstr = "".join(fields_as_str)
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_hyper"
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
