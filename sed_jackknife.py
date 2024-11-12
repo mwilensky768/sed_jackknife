@@ -334,26 +334,28 @@ if __name__ == "__main__":
     file_root = f"MEERKLASS_field{args.field}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_hyper"
 
     slices = slice_setup(args.jk_mode)
-    
+    Nfields = len(args.fields)
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
     if args.low_dim:
-        gain_cov = gain_cov_process(gain_cov, args.bitstr, args.gain_std, slices=slices)
+        for field_ind in range(Nfields):
+            gain_cov[field_ind] = gain_cov_process(gain_cov[field_ind], 
+                                                   args.bitstr, args.gain_std, 
+                                                   slices=slices)
     
     gain_hypermean = 0
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
     num_gains = len(gain_hyperstd)
     
     alpha_bounds = (-1.8, 0)
-    S0_bounds = (0.5 * S0_cent, 2 * S0_cent)
+    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
     c_bounds = (-0.3, 0)
     gm_bounds = (0, 3) # Just used for optimization
     
-    if args.low_dim:
-        nDims = 2 + int(args.curv) # curved power law
-    else:
-        nDims = 2 + num_gains + int(args.curv) # add gain means
+    nDims = (2 + int(args.curv)) * Nfields
+    if not args.low_dim:
+        nDims += num_gains
     nDerived = 2
     
     # Fits from Mel's paper
