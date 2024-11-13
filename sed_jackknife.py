@@ -335,11 +335,6 @@ if __name__ == "__main__":
     if not args.low_dim:
         nDims += num_gains
     nDerived = 2
-    
-    # Fits from Mel's paper
-    init_guesses = {"0": (-0.52, S0_cent, -0.13, 1, 1, 1, 1), 
-                    "1": (-0.46, S0_cent, -0.14, 1, 1, 1, 1), 
-                    "2": (-0.54, S0_cent, -0.08, 1, 1, 1, 1)}
         
     
     settings = pypolychord.PolyChordSettings(nDims, nDerived, 
