@@ -262,7 +262,7 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
     plaw_ret = []
     for field_ind in range(Nfields):
         alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
-        S0_prior = UniformPrior(*S0_bounds)(cube_coords[field_ind * nplaw_params + 1])
+        S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
             plaw_ret += [alpha_prior, S0_prior, c_prior]
@@ -295,8 +295,6 @@ if __name__ == "__main__":
     parser.add_argument("--low-dim", required=False, action="store_true", dest="low_dim")
     parser.add_argument("--curv", required=False, action="store_true")
     parser.add_argument("--offset", required=False, action="store_true", dest="offset")
-    parser.add_argument("--flat", required=False, action="store_true",
-                        help="Whether to use a flat prior on the gain offsets.")
     parser.add_argument("--bitstr", required=False, action="store", type=str)
     parser.add_argument("--jk-mode", required=False, action="store", default=None, dest="jk_mode", 
                         help="String specifying which validation jackknife is being run")
@@ -357,26 +355,32 @@ if __name__ == "__main__":
     
 
     def loglikewrap(params):
-        loglike = 0
+        full_loglike = 0.
+        full_chisq = 0.
+        full_logdetcov = 0.
         for field_ind in range(Nfields): # Assume noise and gain scatter are independent errors across fields
             plaw_params = params[field_ind * nplaw_params: (field_ind + 1) * nplaw_params]
-            field_params = plaw_params + params[-num_gains:]
-            loglike += loglike(
+            field_params = np.append(plaw_params, params[-num_gains:])
+            logL_field, (chisq_field, logdetcov_field) = loglike(
                 field_params, 
                 freqs, 
-                data, 
-                noise, 
-                gain_cov, 
+                data[field_ind], 
+                noise[field_ind], 
+                gain_cov[field_ind], 
                 ref_freq=args.ref_freq, 
                 low_dim=args.low_dim, 
                 curv=args.curv, 
                 slices=slices
             )
+            full_loglike += logL_field
+            full_chisq += chisq_field
+            full_logdetcov += logdetcov_field
+        return full_loglike, (full_chisq, full_logdetcov)
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
                      gain_hypermean, gain_hyperstd, Nfields, low_dim=args.low_dim, 
-                     flat=args.flat, curv=args.curv)
+                     curv=args.curv)
 
 
     output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
@@ -391,7 +395,7 @@ if __name__ == "__main__":
             model_params_field.append(r"$c_%s$" % field)
         param_names.extend(model_params_field)
     
-    exp_names = ["LWA, Has", "MK1", "MK2"]
+    exp_names = ["LWA", "Has", "MK1", "MK2"]
     if args.jk_mode == "high":
         exp_names.pop(2)
     for gain_ind in range(num_gains):
