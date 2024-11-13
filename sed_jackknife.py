@@ -298,6 +298,8 @@ if __name__ == "__main__":
     parser.add_argument("--bitstr", required=False, action="store", type=str)
     parser.add_argument("--jk-mode", required=False, action="store", default=None, dest="jk_mode", 
                         help="String specifying which validation jackknife is being run")
+    parser.add_argument("--alpha-bounds", required=False, action="store", dest="alpha_bounds",
+                        type=float, nargs=2, default=(-1.8, 0))
     args = parser.parse_args()
 
     
@@ -308,10 +310,13 @@ if __name__ == "__main__":
 
     slices = slice_setup(args.jk_mode)
     Nfields = len(args.fields)
+    alpha_bounds = (min(args.alpha_bounds), max(args.alpha_bounds))
+    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
+    c_bounds = (-0.3, 0)
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_hyper"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_hyper"
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
@@ -324,11 +329,8 @@ if __name__ == "__main__":
     gain_hypermean = 0
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
     num_gains = len(gain_hyperstd)
-    
-    alpha_bounds = (-1.8, 0)
-    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
-    c_bounds = (-0.3, 0)
-    gm_bounds = (0, 3) # Just used for optimization
+
+
     
     nplaw_params = 2 + int(args.curv)
     nDims = nplaw_params * Nfields
