@@ -311,8 +311,7 @@ if __name__ == "__main__":
     slices = slice_setup(args.jk_mode)
     Nfields = len(args.fields)
     alpha_bounds = (min(args.alpha_bounds), max(args.alpha_bounds))
-    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
-    c_bounds = (-0.3, 0)
+
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
@@ -329,6 +328,9 @@ if __name__ == "__main__":
     gain_hypermean = 0
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
     num_gains = len(gain_hyperstd)
+
+    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
+    c_bounds = (-0.3, 0)
 
 
     
