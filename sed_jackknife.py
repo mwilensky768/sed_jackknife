@@ -269,11 +269,11 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     return logL, (chisq, logdetcov)
 
 def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, 
-          gain_hyperstd, Nfields, low_dim=False, curv=False):
+          gain_hyperstd, Nfields, low_dim=False, curv=False, double_law=False):
     
     nplaw_params = 2 + int(curv)
     plaw_ret = []
-    for field_ind in range(Nfields):
+    for field_ind in range(Nfields + int(double_law)):
         alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
         S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
         if curv:
@@ -282,7 +282,7 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
         else:
             plaw_ret += [alpha_prior, S0_prior]
     
-    # Same priors for now
+
     if not low_dim:
         num_gain = len(gain_hyperstd)
         gain_ret = GaussianPrior(np.full(num_gain, gain_hypermean), gain_hyperstd)(cube_coords[-num_gain:])
