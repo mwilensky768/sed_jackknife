@@ -275,7 +275,10 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
     plaw_ret = []
     for field_ind in range(Nfields + int(double_law)):
         alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
-        S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
+        if field_ind < Nfields:
+            S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
+        else:
+            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params])) # Must be less than all other S0s
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
             plaw_ret += [alpha_prior, S0_prior, c_prior]
