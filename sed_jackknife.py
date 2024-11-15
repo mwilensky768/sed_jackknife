@@ -357,7 +357,7 @@ if __name__ == "__main__":
 
     
     nplaw_params = 2 + int(args.curv)
-    nDims = nplaw_params * Nfields
+    nDims = nplaw_params * (Nfields + int(args.double_law))
     if not args.low_dim:
         nDims += num_gains
     nDerived = 2
