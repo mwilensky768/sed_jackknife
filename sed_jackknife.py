@@ -278,7 +278,8 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
         if field_ind < Nfields:
             S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
         else:
-            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params])) # Must be less than all other S0s
+            # Must be less than all other S0s 
+            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params])) 
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
             plaw_ret += [alpha_prior, S0_prior, c_prior]
@@ -316,6 +317,8 @@ if __name__ == "__main__":
                         help="String specifying which validation jackknife is being run")
     parser.add_argument("--alpha-bounds", required=False, action="store", dest="alpha_bounds",
                         type=float, nargs=2, default=(-1.8, 0))
+    parser.add_argument("--double-law", required=False, action="store_true",
+                        dest="double_law")
     args = parser.parse_args()
 
     
@@ -345,7 +348,10 @@ if __name__ == "__main__":
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
     num_gains = len(gain_hyperstd)
 
-    S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
+    if args.double_law:
+        S0_bounds = Nfields * [0, 5] # This parameter takes on a different meaning with double_law
+    else:
+        S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
     c_bounds = (-0.3, 0)
 
 
@@ -375,6 +381,13 @@ if __name__ == "__main__":
         full_logdetcov = 0.
         for field_ind in range(Nfields): # Assume noise and gain scatter are independent errors across fields
             plaw_params = params[field_ind * nplaw_params: (field_ind + 1) * nplaw_params]
+            if args.double_law:
+                plaw_params = np.concatenate(
+                    [
+                        plaw_params, 
+                        params[Nfields*nplaw_params:(Nfields + 1)*nplaw_params]
+                    ]
+                )
             field_params = np.append(plaw_params, params[-num_gains:])
             logL_field, (chisq_field, logdetcov_field) = loglike(
                 field_params, 
@@ -385,7 +398,8 @@ if __name__ == "__main__":
                 ref_freq=args.ref_freq, 
                 low_dim=args.low_dim, 
                 curv=args.curv, 
-                slices=slices
+                slices=slices,
+                double_law=args.double_law
             )
             full_loglike += logL_field
             full_chisq += chisq_field
@@ -395,7 +409,7 @@ if __name__ == "__main__":
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
                      gain_hypermean, gain_hyperstd, Nfields, low_dim=args.low_dim, 
-                     curv=args.curv)
+                     curv=args.curv, double_law=args.double_law)
 
 
     output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
