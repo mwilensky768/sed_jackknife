@@ -414,6 +414,7 @@ if __name__ == "__main__":
 
     output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
 
+"""
     param_names = []
     for field in args.fields:
         model_params_field = [
@@ -431,3 +432,4 @@ if __name__ == "__main__":
         param_names.append(r"$\varepsilon_%s$" % exp_names[gain_ind])
 
     output.make_paramnames_files(param_names)
+"""
