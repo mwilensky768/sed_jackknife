@@ -195,8 +195,8 @@ def get_model(alpha_0, S0, c, freqs, ref_freq=73):
     
     return model
 
-def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, low_dim=False, 
-            curv=False, slices=slice_setup()):
+def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False, 
+            curv=False, slices=slice_setup(), double_law=False):
     """
     Get the log-likelihood of the parameters.
 
@@ -222,20 +222,33 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73, low_dim=False,
             Whether the power law is considered to be curved.
         slices (tuple):
             tuple of slices into the data
+        double_law (bool):
+            Whether to model a second power law or not. This power law is 
+            subtracted from the first.
     Returns:
         logL (float):
             The log-likelihood of the parameters given the data and hyperparameters.
         (chisq, logdetcov):
             The chi-square and log|cov| at these parameter values (derived statistics)
     """
-    
-    if curv: 
-        model_args = params[:3]
-        num_plaw_params = 3
-    else:
-        model_args = (params[0], params[1], 0)
-        num_plaw_params = 2
-    model = get_model(*model_args, freqs, ref_freq=ref_freq)
+    num_laws = 1 + int(double_law)
+    num_plaw_params_per_law = 2 + int(curv)
+    num_plaw_params = num_plaw_params_per_law * num_laws
+
+    model_params = params[:num_plaw_params].reshape(
+        num_laws, 
+        num_plaw_params_per_law
+    )
+
+    model = np.zeros_like(data)
+    for law_ind in range(num_laws):
+        if curv: 
+            this_model_args = model_params[law_ind]
+        else:
+            this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
+        this_model = get_model(*this_model_args, freqs, ref_freq=ref_freq)
+        model += (-1)**(law_ind) * this_model # First model is positive
+
  
     gained_model = np.copy(model)
     num_gains = len(params) - num_plaw_params
