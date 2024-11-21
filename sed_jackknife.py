@@ -311,7 +311,8 @@ if __name__ == "__main__":
     parser.add_argument("--gain-std", required=False, default=0.25, type=float, dest="gain_std")
     parser.add_argument("--low-dim", required=False, action="store_true", dest="low_dim")
     parser.add_argument("--curv", required=False, action="store_true")
-    parser.add_argument("--offset", required=False, action="store_true", dest="offset")
+    parser.add_argument("--offset-file", required=False, action="store", 
+                        dest="offset_file", default=None)
     parser.add_argument("--bitstr", required=False, action="store", type=str)
     parser.add_argument("--jk-mode", required=False, action="store", default=None, dest="jk_mode", 
                         help="String specifying which validation jackknife is being run")
@@ -338,6 +339,10 @@ if __name__ == "__main__":
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
+    if args.offset_file is not None:
+        offset_arr = np.load(args.offset_file)
+        data -= offset_arr
+
     if args.low_dim:
         for field_ind in range(Nfields):
             gain_cov[field_ind] = gain_cov_process(gain_cov[field_ind], 
