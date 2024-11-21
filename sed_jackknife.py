@@ -279,7 +279,7 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
             S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
         else:
             # Must be less than all other S0s 
-            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params])) 
+            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params]))(cube_coords[field_ind * nplaw_params + 1])
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
             plaw_ret += [alpha_prior, S0_prior, c_prior]
@@ -307,7 +307,7 @@ if __name__ == "__main__":
                         help="Directory where the SED data live")
     parser.add_argument("--nlive-fac", dest="nlive_fac", type=int, default=2, required=False)
     parser.add_argument("--num-repeats-fac", dest="num_repeats_fac", type=int, default=1, required=False)
-    parser.add_argument("--ref_freq", required=False, default=73, type=float)
+    parser.add_argument("--ref-freq", required=False, default=73, type=float, dest="ref_freq")
     parser.add_argument("--gain-std", required=False, default=0.25, type=float, dest="gain_std")
     parser.add_argument("--low-dim", required=False, action="store_true", dest="low_dim")
     parser.add_argument("--curv", required=False, action="store_true")
@@ -334,7 +334,7 @@ if __name__ == "__main__":
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_hyper"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_hyper"
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
@@ -349,7 +349,7 @@ if __name__ == "__main__":
     num_gains = len(gain_hyperstd)
 
     if args.double_law:
-        S0_bounds = Nfields * [0, 5] # This parameter takes on a different meaning with double_law
+        S0_bounds = Nfields * [(0, 5), ] # This parameter takes on a different meaning with double_law
     else:
         S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
     c_bounds = (-0.3, 0)
