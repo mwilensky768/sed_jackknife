@@ -231,7 +231,9 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
         (chisq, logdetcov):
             The chi-square and log|cov| at these parameter values (derived statistics)
     """
-    num_laws = 1 + int(double_law)
+    num_fields = data.shape[0]
+    num_freqs = len(freqs)
+    num_laws = num_fields + int(double_law)
     num_plaw_params_per_law = 2 + int(curv)
     num_plaw_params = num_plaw_params_per_law * num_laws
 
@@ -240,24 +242,34 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
         num_plaw_params_per_law
     )
 
-    model = np.zeros_like(data)
+    model = np.zeros_like([num_laws, num_freqs])
     for law_ind in range(num_laws):
         if curv: 
             this_model_args = model_params[law_ind]
         else:
             this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
-        this_model = get_model(*this_model_args, freqs, ref_freq=ref_freq)
-        model += (-1)**(law_ind) * this_model # First model is positive
+        model[law_ind] = get_model(*this_model_args, freqs, ref_freq=ref_freq)
 
  
     gained_model = np.copy(model)
     num_gains = len(params) - num_plaw_params
     if not low_dim: # apply gains, otherwise condition on gain_means=1
         for slc_ind, slc in enumerate(slices[:num_gains]):
-            gained_model[slc] *= (1 + params[slc_ind + num_plaw_params])
+            gained_model[:, slc] *= (1 + params[slc_ind + num_plaw_params])
     
-    res = data - gained_model
-    cov = np.outer(model, model) * gain_cov + np.diag(noise)
+    res = data - gained_model[:num_fields]
+    if double_law:
+        res += gained_model[-1]
+    res = res.flatten()
+
+    cov = np.zeros([num_fields, num_freqs, num_fields, num_freqs])
+    for field1 in range(num_fields):
+        for field2 in range(num_fields):
+            if double_law:
+                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(noise[-1])
+            if field1 == field2:
+                cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_coiv + np.diag(noise[field_1])
+    cov = cov.reshape(num_fields * num_freqs, num_fields * num_freqs)    
     
     cinv_res = np.linalg.solve(cov, res)
     
@@ -381,35 +393,18 @@ if __name__ == "__main__":
     
 
     def loglikewrap(params):
-        full_loglike = 0.
-        full_chisq = 0.
-        full_logdetcov = 0.
-        for field_ind in range(Nfields): # Assume noise and gain scatter are independent errors across fields
-            plaw_params = params[field_ind * nplaw_params: (field_ind + 1) * nplaw_params]
-            if args.double_law:
-                plaw_params = np.concatenate(
-                    [
-                        plaw_params, 
-                        params[Nfields*nplaw_params:(Nfields + 1)*nplaw_params]
-                    ]
-                )
-            field_params = np.append(plaw_params, params[-num_gains:])
-            logL_field, (chisq_field, logdetcov_field) = loglike(
-                field_params, 
-                freqs, 
-                data[field_ind], 
-                noise[field_ind], 
-                gain_cov[field_ind], 
-                ref_freq=args.ref_freq, 
-                low_dim=args.low_dim, 
-                curv=args.curv, 
-                slices=slices,
-                double_law=args.double_law
-            )
-            full_loglike += logL_field
-            full_chisq += chisq_field
-            full_logdetcov += logdetcov_field
-        return full_loglike, (full_chisq, full_logdetcov)
+        logL, (chisq, logdetcov) = loglike(
+            params, 
+            freqs, 
+            data, 
+            noise, 
+            gain_cov, 
+            ref_freq=args.ref_freq,
+            low_dim=args.low_dim,
+            slices=slices,
+            double_law=args.double_law
+        )
+        return logL, (chisq, logdetcov)
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
