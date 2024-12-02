@@ -67,7 +67,7 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
     Nfreqs = sum([slice.stop - slice.start for slice in slices])
     Nfields = len(fields)
     data_shape = [Nfields, Nfreqs]
-    gain_cov_shape = [Nfields, Nfreqs, Nfreqs]
+    gain_cov_shape = [Nfreqs, Nfreqs]
         
     data = np.zeros(data_shape)
     noise = np.zeros(data_shape)
@@ -84,7 +84,7 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
             slc = slice(None)
         data[field_ind] = datarr[2, slc]
         noise[field_ind] = datarr[3, slc]**2
-        gain_cov[field_ind] = np.diag(datarr[4, slc]**2)
+        gain_cov = np.diag(datarr[4, slc]**2)
         freqs = datarr[1, slc]
         S0_cent[field_ind] = datarr[2, 0]
 
@@ -242,12 +242,13 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
         num_plaw_params_per_law
     )
 
-    model = np.zeros_like([num_laws, num_freqs])
+    model = np.zeros([num_laws, num_freqs])
     for law_ind in range(num_laws):
         if curv: 
             this_model_args = model_params[law_ind]
         else:
             this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
+
         model[law_ind] = get_model(*this_model_args, freqs, ref_freq=ref_freq)
 
  
@@ -266,9 +267,9 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     for field1 in range(num_fields):
         for field2 in range(num_fields):
             if double_law:
-                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(noise[-1])
+                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(np.mean(noise, axis=0)) # FIXME: Get actual noise estimates
             if field1 == field2:
-                cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_coiv + np.diag(noise[field_1])
+                cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_cov + np.diag(noise[field1])
     cov = cov.reshape(num_fields * num_freqs, num_fields * num_freqs)    
     
     cinv_res = np.linalg.solve(cov, res)
@@ -351,15 +352,17 @@ if __name__ == "__main__":
 
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
+
     if args.offset_file is not None:
         offset_arr = np.load(args.offset_file)
         data -= offset_arr
 
     if args.low_dim:
-        for field_ind in range(Nfields):
-            gain_cov[field_ind] = gain_cov_process(gain_cov[field_ind], 
-                                                   args.bitstr, args.gain_std, 
-                                                   slices=slices)
+        raise NotImplementedError("Due to changes in the analysis involving joint modeling, this feature is unavailable")
+        # Leave this code here for when it ought to be implemented
+        gain_cov = gain_cov_process(gain_cov, 
+                                    args.bitstr, args.gain_std, 
+                                    slices=slices)
     
     gain_hypermean = 0
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
