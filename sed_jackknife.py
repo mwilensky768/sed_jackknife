@@ -401,9 +401,10 @@ if __name__ == "__main__":
             freqs, 
             data, 
             noise, 
-            gain_cov, 
+            gain_cov,
             ref_freq=args.ref_freq,
             low_dim=args.low_dim,
+            curv=args.curv,
             slices=slices,
             double_law=args.double_law
         )
