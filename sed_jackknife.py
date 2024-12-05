@@ -32,7 +32,8 @@ def slice_setup(jk_mode=None):
     return slices
         
 
-def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
+def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(), 
+             single_law=False):
     """
     Reads data and metadata from an npy file according to which axis is which:
     1 - frequencies
@@ -66,13 +67,13 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup()):
 
     Nfreqs = sum([slice.stop - slice.start for slice in slices])
     Nfields = len(fields)
-    data_shape = [Nfields, Nfreqs]
+    data_shape = [Nfields + 1 - int(single_law), Nfreqs]
     gain_cov_shape = [Nfreqs, Nfreqs]
         
     data = np.zeros(data_shape)
     noise = np.zeros(data_shape)
     gain_cov = np.zeros(gain_cov_shape)
-    S0_cent = np.zeros(Nfields)
+    S0_cent = np.zeros(Nfields + 1 - int(single_law))
 
     for field_ind, field in enumerate(fields):
         datarr = np.load(f"{filedir}/apdata_source{field}.npy")
@@ -196,7 +197,7 @@ def get_model(alpha_0, S0, c, freqs, ref_freq=73):
     return model
 
 def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False, 
-            curv=False, slices=slice_setup(), double_law=False):
+            curv=False, slices=slice_setup(), single_law=False):
     """
     Get the log-likelihood of the parameters.
 
@@ -222,9 +223,8 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
             Whether the power law is considered to be curved.
         slices (tuple):
             tuple of slices into the data
-        double_law (bool):
-            Whether to model a second power law or not. This power law is 
-            subtracted from the first.
+        single_law (bool):
+            Whether to only model a single power law.
     Returns:
         logL (float):
             The log-likelihood of the parameters given the data and hyperparameters.
@@ -233,7 +233,7 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     """
     num_fields = data.shape[0]
     num_freqs = len(freqs)
-    num_laws = num_fields + int(double_law)
+    num_laws = num_fields + 1 - int(single_law)
     num_plaw_params_per_law = 2 + int(curv)
     num_plaw_params = num_plaw_params_per_law * num_laws
 
@@ -259,15 +259,15 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
             gained_model[:, slc] *= (1 + params[slc_ind + num_plaw_params])
     
     res = data - gained_model[:num_fields]
-    if double_law:
+    if not single_law:
         res += gained_model[-1]
     res = res.flatten()
 
     cov = np.zeros([num_fields, num_freqs, num_fields, num_freqs])
     for field1 in range(num_fields):
         for field2 in range(num_fields):
-            if double_law:
-                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(np.mean(noise, axis=0)) # FIXME: Get actual noise estimates
+            if not single_law:
+                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(noise[-1]) 
             if field1 == field2:
                 cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_cov + np.diag(noise[field1])
     cov = cov.reshape(num_fields * num_freqs, num_fields * num_freqs)    
@@ -282,17 +282,18 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     return logL, (chisq, logdetcov)
 
 def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, 
-          gain_hyperstd, Nfields, low_dim=False, curv=False, double_law=False):
+          gain_hyperstd, Nfields, low_dim=False, curv=False, single_law=False,
+          enforce_min=False):
     
     nplaw_params = 2 + int(curv)
     plaw_ret = []
-    for field_ind in range(Nfields + int(double_law)):
+    for field_ind in range(Nfields + 1 - int(single_law)):
         alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
-        if field_ind < Nfields:
-            S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
-        else:
+        if (field_ind > Nfields) and enforce_min: 
             # Must be less than all other S0s 
             S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params]))(cube_coords[field_ind * nplaw_params + 1])
+        else:
+            S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
             plaw_ret += [alpha_prior, S0_prior, c_prior]
@@ -324,15 +325,17 @@ if __name__ == "__main__":
     parser.add_argument("--gain-std", required=False, default=0.25, type=float, dest="gain_std")
     parser.add_argument("--low-dim", required=False, action="store_true", dest="low_dim")
     parser.add_argument("--curv", required=False, action="store_true")
-    parser.add_argument("--offset-file", required=False, action="store", 
-                        dest="offset_file", default=None)
+    parser.add_argument("--ref-field", required=False, action="store", type=int,
+                        dest="ref_field", default=3)
     parser.add_argument("--bitstr", required=False, action="store", type=str)
     parser.add_argument("--jk-mode", required=False, action="store", default=None, dest="jk_mode", 
                         help="String specifying which validation jackknife is being run")
     parser.add_argument("--alpha-bounds", required=False, action="store", dest="alpha_bounds",
                         type=float, nargs=2, default=(-1.8, 0))
-    parser.add_argument("--double-law", required=False, action="store_true",
-                        dest="double_law")
+    parser.add_argument("--single-law", required=False, action="store_true",
+                        dest="single_law")
+    parser.add_argument("--enforce-min", action="store_true", default=False,
+                        dest="enforce_min")
     args = parser.parse_args()
 
     
@@ -348,14 +351,12 @@ if __name__ == "__main__":
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_hyper"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}"
 
+    fields = args.fields + [args.ref_field]
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
                                                      args.jk_mode, slices=slices)
-
-    if args.offset_file is not None:
-        offset_arr = np.load(args.offset_file)
-        data -= offset_arr
+    data = data[:Nfields] - data[-1]
 
     if args.low_dim:
         raise NotImplementedError("Due to changes in the analysis involving joint modeling, this feature is unavailable")
@@ -368,16 +369,16 @@ if __name__ == "__main__":
     gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
     num_gains = len(gain_hyperstd)
 
-    if args.double_law:
-        S0_bounds = Nfields * [(0, 5), ] # This parameter takes on a different meaning with double_law
-    else:
+    if args.single_law:
         S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
+    else:
+        S0_bounds = Nfields * [(0, 5), ] # This parameter takes on a different meaning with double_law
     c_bounds = (-0.3, 0)
 
 
     
     nplaw_params = 2 + int(args.curv)
-    nDims = nplaw_params * (Nfields + int(args.double_law))
+    nDims = nplaw_params * (Nfields + 1 - int(args.single_law))
     if not args.low_dim:
         nDims += num_gains
     nDerived = 2
@@ -406,14 +407,15 @@ if __name__ == "__main__":
             low_dim=args.low_dim,
             curv=args.curv,
             slices=slices,
-            double_law=args.double_law
+            single=args.single_law
         )
         return logL, (chisq, logdetcov)
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
                      gain_hypermean, gain_hyperstd, Nfields, low_dim=args.low_dim, 
-                     curv=args.curv, double_law=args.double_law)
+                     curv=args.curv, single_law=args.single_law, 
+                     enforce_min=args.enforce_min)
 
 
     output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
