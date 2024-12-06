@@ -252,6 +252,8 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
             this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
 
         model[law_ind] = get_model(*this_model_args, freqs, ref_freq=ref_freq)
+    if not single_law:
+        model = model[:num_fields] - model[-1]
 
  
     gained_model = np.copy(model)
@@ -261,18 +263,18 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
             gained_model[:, slc] *= (1 + params[slc_ind + num_plaw_params])
 
     
-    res = data - gained_model[:num_fields]
-    if not single_law:
-        res += gained_model[-1]
+    res = data - gained_model
     res = res.flatten()
 
     cov = np.zeros([num_fields, num_freqs, num_fields, num_freqs])
     for field1 in range(num_fields):
         for field2 in range(num_fields):
             if not single_law:
-                cov[field1, :, field2] += np.outer(model[-1], model[-1]) * gain_cov + np.diag(noise[-1]) 
+                cov[field1, :, field2] += np.diag(noise[-1]) 
             if field1 == field2:
-                cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_cov + np.diag(noise[field1])
+                cov[field1, :, field2] += np.diag(noise[field1])
+            if low_dim:
+                cov[field1, :, field2] += np.outer(model[field1], model[field2]) * gain_cov
     cov = cov.reshape(num_fields * num_freqs, num_fields * num_freqs)    
     
     cinv_res = np.linalg.solve(cov, res)
