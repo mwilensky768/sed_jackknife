@@ -33,7 +33,7 @@ def slice_setup(jk_mode=None):
         
 
 def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(), 
-             single_law=False):
+             single_law=False, arb_noise=False):
     """
     Reads data and metadata from an npy file according to which axis is which:
     1 - frequencies
@@ -45,9 +45,8 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
         filedir (str): 
             Path to directory containing the files.
         fields (int or seq):
-            Which fields to process. Fields with designation greater than 2
-            are simulation fields. Must not jointly analyze fields with 
-            different frequencies.
+            Which fields to process. Last field is the reference field.
+            Must not jointly analyze fields with different frequencies.
         jk_mode (None or str):
             Which jackknife is being run. 
 
@@ -67,13 +66,13 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
 
     Nfreqs = sum([slice.stop - slice.start for slice in slices])
     Nfields = len(fields)
-    data_shape = [Nfields + 1 - int(single_law), Nfreqs]
+    data_shape = [Nfields, Nfreqs]
     gain_cov_shape = [Nfreqs, Nfreqs]
         
     data = np.zeros(data_shape)
     noise = np.zeros(data_shape)
     gain_cov = np.zeros(gain_cov_shape)
-    S0_cent = np.zeros(Nfields + 1 - int(single_law))
+    S0_cent = np.zeros(Nfields)
 
     for field_ind, field in enumerate(fields):
         datarr = np.load(f"{filedir}/apdata_source{field}.npy")
@@ -85,6 +84,9 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
             slc = slice(None)
         data[field_ind] = datarr[2, slc]
         noise[field_ind] = datarr[3, slc]**2
+        if arb_noise:
+            noise[field_ind, 1] *= 37 # Based on Haslam's resolution
+            noise[field_ind, 2:] *= 16 * 79 # Derived based on MeerKAT's resolution and a correction from Mel
         gain_cov = np.diag(datarr[4, slc]**2)
         freqs = datarr[1, slc]
         S0_cent[field_ind] = datarr[2, 0]
@@ -257,6 +259,7 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     if not low_dim: # apply gains, otherwise condition on gain_means=1
         for slc_ind, slc in enumerate(slices[:num_gains]):
             gained_model[:, slc] *= (1 + params[slc_ind + num_plaw_params])
+
     
     res = data - gained_model[:num_fields]
     if not single_law:
@@ -275,7 +278,7 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     cinv_res = np.linalg.solve(cov, res)
     
     chisq = np.sum(res * cinv_res)
-    logdetcov = np.linalg.slogdet(cov)[1] + len(freqs) * np.log(2 * np.pi)
+    logdetcov = np.linalg.slogdet(cov)[1] + (num_fields * num_freqs) * np.log(2 * np.pi)
     
     logL = - 0.5 * (chisq + logdetcov)
     
@@ -336,6 +339,10 @@ if __name__ == "__main__":
                         dest="single_law")
     parser.add_argument("--enforce-min", action="store_true", default=False,
                         dest="enforce_min")
+    parser.add_argument("--S0-bounds", required=False, default=(1, 4), action="store", nargs=2, type=float,
+                        dest="S0_bounds")
+    parser.add_argument("--arb-noise", required=False, default=False, action="store_true",
+                        dest="arb_noise")
     args = parser.parse_args()
 
     
@@ -351,11 +358,12 @@ if __name__ == "__main__":
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}_S0_bounds_{min(args.S0_bounds)}_{max(args.S0_bounds)}_arb_noise{args.arb_noise}"
 
-    fields = args.fields + [args.ref_field]
-    data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, args.fields, 
-                                                     args.jk_mode, slices=slices)
+    fields = list(args.fields) + [args.ref_field]
+    data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, fields, 
+                                                     args.jk_mode, slices=slices,
+                                                     arb_noise=args.arb_noise)
     data = data[:Nfields] - data[-1]
 
     if args.low_dim:
@@ -372,7 +380,7 @@ if __name__ == "__main__":
     if args.single_law:
         S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
     else:
-        S0_bounds = Nfields * [(0, 5), ] # This parameter takes on a different meaning with double_law
+        S0_bounds = (Nfields + 1) * [(min(args.S0_bounds), max(args.S0_bounds)), ] # This parameter takes on a different meaning with double_law
     c_bounds = (-0.3, 0)
 
 
@@ -407,7 +415,7 @@ if __name__ == "__main__":
             low_dim=args.low_dim,
             curv=args.curv,
             slices=slices,
-            single=args.single_law
+            single_law=args.single_law
         )
         return logL, (chisq, logdetcov)
     
