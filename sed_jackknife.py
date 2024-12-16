@@ -33,7 +33,7 @@ def slice_setup(jk_mode=None):
         
 
 def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(), 
-             single_law=False, arb_noise=False):
+             single_law=False):
     """
     Reads data and metadata from an npy file according to which axis is which:
     1 - frequencies
@@ -84,70 +84,12 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
             slc = slice(None)
         data[field_ind] = datarr[2, slc]
         noise[field_ind] = datarr[3, slc]**2
-        if arb_noise:
-            noise[field_ind, 1] *= 37 # Based on Haslam's resolution
-            noise[field_ind, 2:] *= 16 * 79 # Derived based on MeerKAT's resolution and a correction from Mel
         gain_cov = np.diag(datarr[4, slc]**2)
         freqs = datarr[1, slc]
         S0_cent[field_ind] = datarr[2, 0]
 
     
     return data, noise, gain_cov, freqs, S0_cent
-
-def gain_cov_process(gain_cov, bitstr, gain_std, slices=slice_setup()):
-    """
-    Transforms the reported gain covariance to the marginal gain covariance
-    after the hyperparameters (gain offsets) are marginalized out.
-
-    Parameters:
-        gain_cov (array):
-            Reported gain covariance from each experiment.
-        bitstr (str):
-            Binary string expressing which experiments have gain offsets.
-        gain_std (float):
-            The standard deviation for the prior on the gain offsets.
-    Returns:
-        new_gain_cov (array):
-            The marginalized gain covariance.
-        
-    """
-    bitlist = [int(bit) for bit in bitstr]
-    new_gain_cov = np.copy(gain_cov)
-    if np.any(bitlist):
-        for bit_ind, bit in enumerate(bitlist):
-            if bit:
-                slice_use = slices[bit_ind]
-                slice_size = slice_use.stop - slice_use.start
-                ones = np.ones(slice_size)
-                cov_add = gain_std**2 * np.outer(ones, ones)
-                new_gain_cov[slice_use, slice_use] += cov_add
-    
-    return new_gain_cov
-
-def gain_std_process(gain_std, bitstr, null_factor=1e-3):
-    """
-    Make the standard deviations for the gain offsets according to the
-    activated entries in bitstr.
-
-    Parameters:
-        gain_std (float):
-            The standard deviation of the gain offset prior.
-        bitstr (str):
-            Binary string expressing which experiments have gain offsets.
-        null_factor (float):
-            The factor by which to multiply the standard deviation
-            for the deactivated entries
-    Returns:
-        gain_stds_use (float):
-            The gain stds for activated entries, but multiplied by null_factor
-            for the deactivated entries.
-    """
-    bitlist = [int(bit) for bit in bitstr]
-    gain_stds = np.full(len(bitlist), gain_std)
-    gain_stds_null = gain_stds * null_factor
-    gain_stds_use = np.where(bitlist, gain_stds, gain_stds_null)
-    
-    return gain_stds_use
         
 
 def get_index(alpha_0, c, freqs, ref_freq=73):
@@ -286,9 +228,8 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     
     return logL, (chisq, logdetcov)
 
-def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean, 
-          gain_hyperstd, Nfields, low_dim=False, curv=False, single_law=False,
-          enforce_min=False):
+def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_cov, Nfields, 
+          low_dim=False, curv=False, single_law=False, enforce_min=False):
     
     nplaw_params = 2 + int(curv)
     plaw_ret = []
@@ -307,8 +248,8 @@ def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_hypermean,
     
 
     if not low_dim:
-        num_gain = len(gain_hyperstd)
-        gain_ret = GaussianPrior(np.full(num_gain, gain_hypermean), gain_hyperstd)(cube_coords[-num_gain:])
+        num_gain = len(gain_cov)
+        gain_ret = GaussianPrior(np.full(num_gain, 0), np.sqrt(gain_cov))(cube_coords[-num_gain:])
         gain_ret = list(gain_ret)
     else:
         gain_ret = []
@@ -324,7 +265,7 @@ if __name__ == "__main__":
     parser.add_argument("--outdir", required=True, help="Where the outputs should be stored")
     parser.add_argument("--filedir", required=False, default="./data",
                         help="Directory where the SED data live")
-    parser.add_argument("--nlive-fac", dest="nlive_fac", type=int, default=2, required=False)
+    parser.add_argument("--nlive-fac", dest="nlive_fac", type=int, default=1, required=False)
     parser.add_argument("--num-repeats-fac", dest="num_repeats_fac", type=int, default=1, required=False)
     parser.add_argument("--ref-freq", required=False, default=73, type=float, dest="ref_freq")
     parser.add_argument("--gain-std", required=False, default=0.25, type=float, dest="gain_std")
@@ -332,7 +273,6 @@ if __name__ == "__main__":
     parser.add_argument("--curv", required=False, action="store_true")
     parser.add_argument("--ref-field", required=False, action="store", type=int,
                         dest="ref_field", default=3)
-    parser.add_argument("--bitstr", required=False, action="store", type=str)
     parser.add_argument("--jk-mode", required=False, action="store", default=None, dest="jk_mode", 
                         help="String specifying which validation jackknife is being run")
     parser.add_argument("--alpha-bounds", required=False, action="store", dest="alpha_bounds",
@@ -343,8 +283,6 @@ if __name__ == "__main__":
                         dest="enforce_min")
     parser.add_argument("--S0-bounds", required=False, default=(1, 4), action="store", nargs=2, type=float,
                         dest="S0_bounds")
-    parser.add_argument("--arb-noise", required=False, default=False, action="store_true",
-                        dest="arb_noise")
     args = parser.parse_args()
 
     
@@ -360,24 +298,26 @@ if __name__ == "__main__":
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_bitstr{args.bitstr}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}_S0_bounds_{min(args.S0_bounds)}_{max(args.S0_bounds)}_arb_noise{args.arb_noise}"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}_S0_bounds_{min(args.S0_bounds)}_{max(args.S0_bounds)}"
 
     fields = list(args.fields) + [args.ref_field]
     data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, fields, 
-                                                     args.jk_mode, slices=slices,
-                                                     arb_noise=args.arb_noise)
+                                                     args.jk_mode, slices=slices)
     data = data[:Nfields] - data[-1]
 
-    if args.low_dim:
-        raise NotImplementedError("Due to changes in the analysis involving joint modeling, this feature is unavailable")
-        # Leave this code here for when it ought to be implemented
-        gain_cov = gain_cov_process(gain_cov, 
-                                    args.bitstr, args.gain_std, 
-                                    slices=slices)
+    # Abbreviate gain_cov
     
-    gain_hypermean = 0
-    gain_hyperstd = gain_std_process(args.gain_std, args.bitstr)
-    num_gains = len(gain_hyperstd)
+
+    if args.low_dim:
+        gain_cov[slices[2], slices[2]] = gain_cov[2, 2] # MeerKAT 1
+        if jk_mode is not None:
+            gain_cov[slices[3], slices[3]] = gain_cov[3, 3] # MeerKAT 2
+        num_gains = 0
+    else:
+        num_gains = len(slices)
+        gain_cov = np.array((gain_cov[0, 0], gain_cov[1, 1], gain_cov[2, 2], gain_cov[-1, -1]))[:num_gains]
+
+    
 
     if args.single_law:
         S0_bounds = [(0.5 * S0_cent[field_ind], 2 * S0_cent[field_ind]) for field_ind in range(Nfields)]
@@ -389,8 +329,7 @@ if __name__ == "__main__":
     
     nplaw_params = 2 + int(args.curv)
     nDims = nplaw_params * (Nfields + 1 - int(args.single_law))
-    if not args.low_dim:
-        nDims += num_gains
+    nDims += num_gains
     nDerived = 2
         
     
@@ -423,7 +362,7 @@ if __name__ == "__main__":
     
     def priorwrap(cube_coords):
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
-                     gain_hypermean, gain_hyperstd, Nfields, low_dim=args.low_dim, 
+                     gain_cov, Nfields, low_dim=args.low_dim, 
                      curv=args.curv, single_law=args.single_law, 
                      enforce_min=args.enforce_min)
 
