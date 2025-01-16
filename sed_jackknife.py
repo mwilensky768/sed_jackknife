@@ -19,7 +19,7 @@ def slice_setup(jk_mode=None):
             Sequence of slices where each slice corresponds to a particular
             experiment.
     """
-    if jk_mode is None:
+    if (jk_mode is None) or jk_mode == "wide":
         slices = (slice(0,1), slice(1, 2), slice(2, 60), slice(60, 150))
     elif jk_mode == "low":
         slices = (slice(0,1), slice(1, 2), slice(2, 60))
@@ -32,7 +32,7 @@ def slice_setup(jk_mode=None):
     return slices
         
 
-def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(), 
+def read_dat(filedir, fields, bitstr, jk_mode=None, slices=slice_setup(), 
              single_law=False):
     """
     Reads data and metadata from an npy file according to which axis is which:
@@ -74,6 +74,8 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
     gain_cov = np.zeros(gain_cov_shape)
     S0_cent = np.zeros(Nfields)
 
+    bit_list = [int(bit) for bit in bitstr]
+
     for field_ind, field in enumerate(fields):
         datarr = np.load(f"{filedir}/apdata_source{field}.npy")
         if jk_mode == "low":
@@ -84,7 +86,16 @@ def read_dat(filedir, fields, jk_mode=None, slices=slice_setup(),
             slc = slice(None)
         data[field_ind] = datarr[2, slc]
         noise[field_ind] = datarr[3, slc]**2
-        gain_cov = np.diag(datarr[4, slc]**2)
+        gain_cov = datarr[4, slc]**2
+        #if jk_mode == "wide":
+            #gain_cov[np.diag_indices(Nfreqs)] = 0.2**2 # Assume 20% gain errors on all experiments
+        for bit_ind, bit in enumerate(bit_list): 
+            if bit:
+                if bit_ind < 2:
+                    gain_cov[bit_ind] = 0.2**2
+                else:
+                    gain_cov[2:] = 0.2**2
+        gain_cov = np.diag(gain_cov)
         freqs = datarr[1, slc]
         S0_cent[field_ind] = datarr[2, 0]
 
@@ -141,7 +152,8 @@ def get_model(alpha_0, S0, c, freqs, ref_freq=73):
     return model
 
 def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False, 
-            curv=False, slices=slice_setup(), single_law=False):
+            curv=False, slices=slice_setup(), single_law=False, pin_S0=False,
+            apdata=None):
     """
     Get the log-likelihood of the parameters.
 
@@ -178,7 +190,7 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     num_fields = data.shape[0]
     num_freqs = len(freqs)
     num_laws = num_fields + 1 - int(single_law)
-    num_plaw_params_per_law = 2 + int(curv)
+    num_plaw_params_per_law = 2 + int(curv) - int(pin_S0)
     num_plaw_params = num_plaw_params_per_law * num_laws
 
     model_params = params[:num_plaw_params].reshape(
@@ -188,10 +200,21 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
 
     model = np.zeros([num_laws, num_freqs])
     for law_ind in range(num_laws):
-        if curv: 
-            this_model_args = model_params[law_ind]
+        if pin_S0:
+            has_gain = 1 + params[-3]
+            if curv:
+                this_model_alpha, this_model_curv = model_params[law_ind]
+            else:
+                this_model_alpha = model_params[law_ind]
+                this_model_curv = 0
+            this_model_S0 = apdata[law_ind, 1] / has_gain
+            
+            this_model_args = (this_model_alpha, this_model_S0, this_model_curv)
         else:
-            this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
+            if curv: 
+                this_model_args = model_params[law_ind]
+            else:
+                this_model_args = (model_params[law_ind, 0], model_params[law_ind, 1], 0)
 
         model[law_ind] = get_model(*this_model_args, freqs, ref_freq=ref_freq)
     if not single_law:
@@ -229,23 +252,24 @@ def loglike(params, freqs, data, noise, gain_cov, ref_freq=73., low_dim=False,
     return logL, (chisq, logdetcov)
 
 def prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, gain_cov, Nfields, 
-          low_dim=False, curv=False, single_law=False, enforce_min=False):
+          low_dim=False, curv=False, single_law=False, enforce_min=False, pin_S0=False):
     
     nplaw_params = 2 + int(curv)
     plaw_ret = []
     for field_ind in range(Nfields + 1 - int(single_law)):
         alpha_prior = UniformPrior(*alpha_bounds)(cube_coords[field_ind * nplaw_params])
-        if (field_ind > Nfields) and enforce_min: 
-            # Must be less than all other S0s 
-            S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params]))(cube_coords[field_ind * nplaw_params + 1])
-        else:
-            S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
+        plaw_ret += [alpha_prior]
+        if not pin_S0:
+            if (field_ind > Nfields) and enforce_min: 
+                # Must be less than all other S0s 
+                S0_prior = UniformPrior(0, min(plaw_ret[1::nplaw_params]))(cube_coords[field_ind * nplaw_params + 1])
+            else:
+                S0_prior = UniformPrior(*S0_bounds[field_ind])(cube_coords[field_ind * nplaw_params + 1])
+            plaw_ret += [S0_prior]
         if curv:
             c_prior = UniformPrior(*c_bounds)(cube_coords[field_ind * nplaw_params + 2])
-            plaw_ret += [alpha_prior, S0_prior, c_prior]
-        else:
-            plaw_ret += [alpha_prior, S0_prior]
-    
+            plaw_ret += [c_prior]
+
 
     if not low_dim:
         num_gain = len(gain_cov)
@@ -283,6 +307,8 @@ if __name__ == "__main__":
                         dest="enforce_min")
     parser.add_argument("--S0-bounds", required=False, default=(1, 4), action="store", nargs=2, type=float,
                         dest="S0_bounds")
+    parser.add_argument("--pin-S0", required=False, action="store_true", dest="pin_S0")
+    parser.add_argument("--bitstr", required=True, type=str)
     args = parser.parse_args()
 
     
@@ -298,12 +324,13 @@ if __name__ == "__main__":
 
     fields_as_str = [str(field) for field in args.fields]
     fieldstr = "".join(fields_as_str)
-    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}_S0_bounds_{min(args.S0_bounds)}_{max(args.S0_bounds)}"
+    file_root = f"MEERKLASS_fields{fieldstr}_nlive{args.nlive_fac}_nrepeat{args.num_repeats_fac}_lowdim{args.low_dim}_curv{args.curv}_jkmode_{args.jk_mode}_alpha_bounds{alpha_bounds[0]}_{alpha_bounds[1]}_ref_freq{args.ref_freq}_ref_field{args.ref_field}_enforce_min{args.enforce_min}_single_law{args.single_law}_S0_bounds_{min(args.S0_bounds)}_{max(args.S0_bounds)}_bitstr{args.bitstr}"
 
     fields = list(args.fields) + [args.ref_field]
-    data, noise, gain_cov, freqs, S0_cent = read_dat(filedir, fields, 
-                                                     args.jk_mode, slices=slices)
-    data = data[:Nfields] - data[-1]
+    apdata, noise, gain_cov, freqs, S0_cent = read_dat(filedir, fields, args.bitstr,
+                                                       args.jk_mode, slices=slices)
+
+    data = apdata[:Nfields] - apdata[-1]
 
     # Abbreviate gain_cov
     
@@ -327,7 +354,7 @@ if __name__ == "__main__":
 
 
     
-    nplaw_params = 2 + int(args.curv)
+    nplaw_params = 2 + int(args.curv) - int(args.pin_S0)
     nDims = nplaw_params * (Nfields + 1 - int(args.single_law))
     nDims += num_gains
     nDerived = 2
@@ -356,7 +383,9 @@ if __name__ == "__main__":
             low_dim=args.low_dim,
             curv=args.curv,
             slices=slices,
-            single_law=args.single_law
+            single_law=args.single_law,
+            pin_S0=args.pin_S0,
+            apdata=apdata
         )
         return logL, (chisq, logdetcov)
     
@@ -364,7 +393,7 @@ if __name__ == "__main__":
         return prior(cube_coords, alpha_bounds, S0_bounds, c_bounds, 
                      gain_cov, Nfields, low_dim=args.low_dim, 
                      curv=args.curv, single_law=args.single_law, 
-                     enforce_min=args.enforce_min)
+                     enforce_min=args.enforce_min, pin_S0=args.pin_S0)
 
 
     output = pypolychord.run_polychord(loglikewrap, nDims, nDerived, settings, prior=priorwrap)
